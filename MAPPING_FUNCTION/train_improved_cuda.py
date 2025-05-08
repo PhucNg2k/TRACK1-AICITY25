@@ -362,13 +362,20 @@ def save_model(model, model_type, model_name=None):
     elif model_type == 'pytorch':
         # Save PyTorch model
         model_path = os.path.join('models', f"{model_name}.pth")
+        # Find the first dropout layer to get the dropout rate
+        dropout_rate = None
+        for module in model.modules():
+            if isinstance(module, nn.Dropout):
+                dropout_rate = module.p
+                break
+        
         torch.save({
             'model_state_dict': model.state_dict(),
             'model_config': {
                 'input_dim': model.model[0].in_features,
                 'hidden_dims': [layer.out_features for layer in model.model if isinstance(layer, nn.Linear)][:-1],
                 'output_dim': model.model[-1].out_features,
-                'dropout_rate': model.model[2].p  # Get dropout rate from first dropout layer
+                'dropout_rate': dropout_rate
             }
         }, model_path)
         print(f"\nPyTorch model saved to: {model_path}")
@@ -431,7 +438,7 @@ def train_randomforest_pipeline(X_train, y_train, X_valid, y_valid):
 def train_pytorch_pipeline(X_train, y_train, X_valid, y_valid):
     """Train PyTorch model pipeline with progress tracking"""
     input_dim = X_train.shape[1]  # Number of features
-    model = train_pytorch_model(X_train, y_train, X_valid, y_valid, input_dim)
+    model = train_pytorch_model(X_train, y_train, X_valid, y_valid, input_dim, n_epochs=10)
     
     # Save the model
     save_model(model, 'pytorch')
@@ -442,12 +449,16 @@ def evaluate_model(y_true, y_pred, set_name=""):
     print(f"\nEvaluation on {set_name} set:")
     print("-" * 50)
     
+    # Convert inputs to numpy arrays if they aren't already
+    y_true = np.array(y_true)
+    y_pred = np.array(y_pred)
+    
     # MSE per coordinate
     mse_per_coord = np.mean((y_true - y_pred)**2, axis=0)
     print("MSE per coordinate:")
-    print(f"X: {mse_per_coord.iloc[0]:.6f}")
-    print(f"Y: {mse_per_coord.iloc[1]:.6f}")
-    print(f"Z: {mse_per_coord.iloc[2]:.6f}")
+    print(f"X: {mse_per_coord[0]:.6f}")
+    print(f"Y: {mse_per_coord[1]:.6f}")
+    print(f"Z: {mse_per_coord[2]:.6f}")
     
     # Euclidean distance error
     euclidean_errors = np.sqrt(np.sum((y_true - y_pred)**2, axis=1))
@@ -460,7 +471,7 @@ def evaluate_model(y_true, y_pred, set_name=""):
     # Additional statistics
     print(f"\nCoordinate-wise Statistics:")
     for i, coord in enumerate(['X', 'Y', 'Z']):
-        errors = np.abs(y_true.iloc[:, i] - y_pred.iloc[:, i])
+        errors = np.abs(y_true[:, i] - y_pred[:, i])
         print(f"{coord} coordinate:")
         print(f"  Mean Absolute Error: {np.mean(errors):.6f}")
         print(f"  Median Absolute Error: {np.median(errors):.6f}")
