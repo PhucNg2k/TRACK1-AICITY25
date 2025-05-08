@@ -14,9 +14,11 @@ from torch.utils.data import DataLoader, TensorDataset
 import os
 import joblib
 from datetime import datetime
+import json
 
-# Create models directory if it doesn't exist
+# Create models and logs directories if they don't exist
 os.makedirs('models', exist_ok=True)
+os.makedirs('logs', exist_ok=True)
 
 # Check CUDA availability
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -506,6 +508,52 @@ def evaluate_pytorch_model(model, X_valid, y_valid, X_test, y_test):
     
     return valid_mse_nn, valid_errors_nn, test_mse_nn, test_errors_nn
 
+def create_log_entry(df_shape, rf_epochs, nn_epochs, rf_metrics, nn_metrics):
+    """Create a log entry with training information"""
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_entry = {
+        "timestamp": timestamp,
+        "dataframe_shape": df_shape,
+        "random_forest": {
+            "epochs": rf_epochs,
+            "validation_metrics": {
+                "mse_per_coord": rf_metrics[0].tolist(),
+                "mean_euclidean_error": float(np.mean(rf_metrics[1])),
+                "median_euclidean_error": float(np.median(rf_metrics[1])),
+                "95th_percentile_error": float(np.percentile(rf_metrics[1], 95))
+            },
+            "test_metrics": {
+                "mse_per_coord": rf_metrics[2].tolist(),
+                "mean_euclidean_error": float(np.mean(rf_metrics[3])),
+                "median_euclidean_error": float(np.median(rf_metrics[3])),
+                "95th_percentile_error": float(np.percentile(rf_metrics[3], 95))
+            }
+        },
+        "pytorch": {
+            "epochs": nn_epochs,
+            "validation_metrics": {
+                "mse_per_coord": nn_metrics[0].tolist(),
+                "mean_euclidean_error": float(np.mean(nn_metrics[1])),
+                "median_euclidean_error": float(np.median(nn_metrics[1])),
+                "95th_percentile_error": float(np.percentile(nn_metrics[1], 95))
+            },
+            "test_metrics": {
+                "mse_per_coord": nn_metrics[2].tolist(),
+                "mean_euclidean_error": float(np.mean(nn_metrics[3])),
+                "median_euclidean_error": float(np.median(nn_metrics[3])),
+                "95th_percentile_error": float(np.percentile(nn_metrics[3], 95))
+            }
+        }
+    }
+    
+    # Save log entry to file
+    log_filename = f"logs/training_log_{timestamp}.json"
+    with open(log_filename, 'w') as f:
+        json.dump(log_entry, f, indent=4)
+    print(f"\nTraining log saved to: {log_filename}")
+    
+    return log_entry
+
 # Main execution
 if __name__ == "__main__":
     # Load and preprocess data
@@ -522,15 +570,24 @@ if __name__ == "__main__":
     # Split data
     X_train, X_valid, X_test, y_train, y_valid, y_test = split_data(X, y, df)
     
-    # Train models (comment out the ones you don't want to train)
+    # Train models
     rf_pipeline = train_randomforest_pipeline(X_train, y_train, X_valid, y_valid)
     pytorch_model = train_pytorch_pipeline(X_train, y_train, X_valid, y_valid)
     
-    # Evaluate models (comment out the ones you don't want to evaluate)
+    # Evaluate models
     valid_mse_rf, valid_errors_rf, test_mse_rf, test_errors_rf = evaluate_randomforest_model(
         rf_pipeline, X_valid, y_valid, X_test, y_test
     )
     
     valid_mse_nn, valid_errors_nn, test_mse_nn, test_errors_nn = evaluate_pytorch_model(
         pytorch_model, X_valid, y_valid, X_test, y_test
+    )
+    
+    # Create and save log entry
+    create_log_entry(
+        df_shape=df.shape,
+        rf_epochs=100,  # RandomForest doesn't use epochs, but we'll log the number of trees
+        nn_epochs=10,   # Number of epochs used in PyTorch training
+        rf_metrics=(valid_mse_rf, valid_errors_rf, test_mse_rf, test_errors_rf),
+        nn_metrics=(valid_mse_nn, valid_errors_nn, test_mse_nn, test_errors_nn)
     ) 
